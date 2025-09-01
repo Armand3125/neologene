@@ -1,118 +1,79 @@
+import streamlit as st
 import numpy as np
 import random
 import string
+from pathlib import Path
 
-# ----------------------------
-# Paramètres globaux
-# ----------------------------
-L = 6                  # longueur fixe des mots
-k = 6                  # nombre de meilleures transitions à garder
-seed = 42
-random.seed(seed); np.random.seed(seed)
+st.set_page_config(page_title="Générateur de mots", page_icon="🔤", layout="centered")
 
 ALPH = string.ascii_lowercase
-A2I = {c:i for i,c in enumerate(ALPH)}
-I2A = {i:c for c,i in A2I.items()}
+I2A = {i: c for i, c in enumerate(ALPH)}
 V = len(ALPH)
 
-def clean(word):
-    w = word.strip().lower()
-    w = "".join(ch for ch in w if ch in ALPH)
-    return w
+@st.cache_resource
+def load_matrices():
+    paths = {"start": Path("start.npy"), "h": Path("h.npy"), "end": Path("end.npy")}
+    for name, p in paths.items():
+        if not p.exists():
+            st.error(f"Fichier manquant : {p.name}. Assure-toi de l'avoir enregistré.")
+            st.stop()
+    Start_top = np.load(paths["start"])
+    H_top = np.load(paths["h"])
+    End_top = np.load(paths["end"])
+    return Start_top, H_top, End_top
 
-# ----------------------------
-# Construction du modèle
-# ----------------------------
-def build_model(corpus, L=6, k=6):
-    words = [clean(x) for x in corpus if x.strip()]
-    words = [w for w in words if len(w) >= 2]
+def sample_from_probs(vec):
+    s = vec.sum()
+    if s > 0:
+        return random.choices(range(V), weights=vec, k=1)[0]
+    return random.randrange(V)
 
-    Start = np.zeros(V, dtype=np.int32)
-    H = np.zeros((V, V), dtype=np.int32)
-    End = np.zeros((V, V), dtype=np.int32)
+def sample_row(P, row_idx):
+    row = P[row_idx]
+    if row.sum() > 0:
+        return random.choices(range(V), weights=row, k=1)[0]
+    return random.randrange(V)
 
-    for w in words:
-        Start[A2I[w[0]]] += 1
-        for a, b in zip(w[:-2], w[1:-1]):
-            H[A2I[a], A2I[b]] += 1
-        End[A2I[w[-2]], A2I[w[-1]]] += 1
+def generate_word(L, Start_top, H_top, End_top):
+    if L < 2:
+        raise ValueError("La longueur doit être ≥ 2")
+    first = sample_from_probs(Start_top)
+    letters = [first]
+    cur = first
+    for _ in range(L - 2):
+        nxt = sample_row(H_top, cur)
+        letters.append(nxt)
+        cur = nxt
+    last = sample_row(End_top, cur)
+    letters.append(last)
+    return "".join(I2A[i] for i in letters)
 
-    def row_normalize(M):
-        M = M.astype(float)
-        s = M.sum(axis=1, keepdims=True)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            P = np.divide(M, s, out=np.zeros_like(M), where=s!=0)
-        return P
+Start_top, H_top, End_top = load_matrices()
 
-    H_prob = row_normalize(H)
-    End_prob = row_normalize(End)
-    Start_prob = Start / Start.sum() if Start.sum() > 0 else np.ones(V) / V
+st.title("🔤 Générateur de mots (bigrammes)")
+st.caption("Charge les matrices .npy (start.npy, h.npy, end.npy) et génère des mots ressemblant au français.")
 
-    def topk_mask_rows(P, k):
-        P2 = np.zeros_like(P)
-        for i in range(P.shape[0]):
-            row = P[i]
-            if row.sum() == 0:
-                continue
-            top = np.argsort(row)[-k:]
-            P2[i, top] = row[top]
-            s = P2[i].sum()
-            if s > 0:
-                P2[i] /= s
-        return P2
+if "last_word" not in st.session_state:
+    st.session_state.last_word = ""
 
-    H_top  = topk_mask_rows(H_prob, k)
-    End_top = topk_mask_rows(End_prob, k)
+L = st.slider("Longueur du mot", min_value=3, max_value=10, value=7, step=1)
+col1, col2 = st.columns([1,1])
 
-    Start_top = np.zeros_like(Start_prob)
-    if Start_prob.sum() > 0:
-        top = np.argsort(Start_prob)[-k:]
-        Start_top[top] = Start_prob[top]
-        Start_top /= Start_top.sum()
+with col1:
+    if st.button("🎲 Nouveau mot"):
+        st.session_state.last_word = generate_word(L, Start_top, H_top, End_top)
 
-    def sample_from_probs(vec):
-        s = vec.sum()
-        if s > 0:
-            return random.choices(range(V), weights=vec, k=1)[0]
-        return random.randrange(V)
+with col2:
+    if st.button("🔁 Recharger matrices"):
+        load_matrices.clear()
+        Start_top, H_top, End_top = load_matrices()
+        st.success("Matrices rechargées.")
 
-    def sample_row(P, row_idx):
-        row = P[row_idx]
-        if row.sum() > 0:
-            return random.choices(range(V), weights=row, k=1)[0]
-        return random.randrange(V)
+st.header("Résultat")
+big = f"<div style='font-size: 3rem; font-weight: 700; letter-spacing: .05em;'>{st.session_state.last_word or '—'}</div>"
+st.markdown(big, unsafe_allow_html=True)
 
-    def generate_word():
-        if L < 2:
-            raise ValueError("L doit être >= 2")
-        first = sample_from_probs(Start_top)
-        letters = [first]
-        cur = first
-        for _ in range(L - 2):
-            nxt = sample_row(H_top, cur)
-            letters.append(nxt)
-            cur = nxt
-        last = sample_row(End_top, cur)
-        letters.append(last)
-        return "".join(I2A[i] for i in letters)
-
-    return Start_top, H_top, End_top, generate_word
-
-# ----------------------------
-# Exemple d'utilisation
-# ----------------------------
-if __name__ == "__main__":
-    with open("mots_fr.txt", "r", encoding="utf-8") as f:
-        corpus = f.readlines()
-
-    Start_top, H_top, End_top, generate_word = build_model(corpus, L=L, k=k)
-
-    # Génération de mots
-    mots = [generate_word() for _ in range(10)]
-    print("Mots générés :", mots)
-
-    # Sauvegarde des matrices
-    np.save("start.npy", Start_top)
-    np.save("h.npy", H_top)
-    np.save("end.npy", End_top)
-    print("Matrices enregistrées : start.npy, h.npy, end.npy")
+with st.expander("Infos matrices"):
+    st.write(f"Start: {Start_top.shape}")
+    st.write(f"H: {H_top.shape}")
+    st.write(f"End: {End_top.shape}")
