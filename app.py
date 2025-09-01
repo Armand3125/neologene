@@ -3,14 +3,14 @@ import numpy as np
 import random
 import string
 from pathlib import Path
-from html import escape
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Le Néologène", page_icon="🔤", layout="centered")
 
 ALPH = string.ascii_lowercase
 I2A = {i: c for i, c in enumerate(ALPH)}
 V = len(ALPH)
+
+URL_DEFINITION = "https://chatgpt.com/g/g-68b5659be5848191b6790872cc11b7fc-le-neologene"
 
 @st.cache_resource
 def load_matrices():
@@ -52,71 +52,27 @@ def generate_word(L, Start_top, H_top, End_top):
 
 Start_top, H_top, End_top = load_matrices()
 
-# ---- UI minimal & esthétique
-st.markdown("""
-<style>
-h1 { text-align:center; font-weight:800; letter-spacing:.02em; }
-.main-card {
-  max-width: 680px; margin: 1.5rem auto 0 auto;
-  background: linear-gradient(180deg, #ffffff, #fafbff);
-  border: 1px solid rgba(0,0,0,.06);
-  border-radius: 18px; padding: 1.25rem 1.25rem 1rem 1.25rem;
-  box-shadow: 0 6px 24px rgba(0,0,0,.06);
-}
-.controls {
-  display:flex; gap:.75rem; align-items:center; justify-content:center; flex-wrap:wrap;
-}
-.word-wrap {
-  position: relative; text-align:center; padding: 1rem 2.25rem 0 2.25rem;
-}
-.word {
-  font-size: clamp(36px, 7vw, 56px);
-  font-weight: 800; letter-spacing: .06em; line-height: 1.05;
-}
-.copy-btn {
-  position: absolute; right: .5rem; top: .25rem;
-  border: 1px solid rgba(0,0,0,.08);
-  background: #ffffff; border-radius: 10px;
-  padding: .35rem .55rem; cursor: pointer; font-size: 1rem;
-  box-shadow: 0 2px 10px rgba(0,0,0,.05);
-  opacity: .65; transition: all .2s ease;
-}
-.copy-btn:hover { opacity: 1; transform: translateY(-1px); }
-.hint {
-  text-align:center; color: #6b7280; font-size: .9rem; margin-top: .5rem;
-}
-footer {visibility: hidden;} /* cache la barre footer streamlit */
-</style>
-""", unsafe_allow_html=True)
-
 st.title("Le Néologène")
 
 if "last_word" not in st.session_state:
     st.session_state.last_word = ""
 
-# Contrôles
 L = st.slider("Longueur du mot", min_value=4, max_value=8, value=7, step=1)
 
-col1, = st.columns(1)
+col1, col2 = st.columns(2)
 with col1:
-    st.button("🎲 Nouveau mot", use_container_width=True,
-              on_click=lambda: st.session_state.update(
-                  last_word=generate_word(L, Start_top, H_top, End_top))
-              )
+    if st.button("🎲 Nouveau mot", use_container_width=True):
+        st.session_state.last_word = generate_word(L, Start_top, H_top, End_top)
+with col2:
+    # Streamlit >= 1.31 : st.link_button
+    try:
+        st.link_button("💡 Donner une définition à ce mot", URL_DEFINITION, use_container_width=True)
+    except Exception:
+        # Fallback si version plus ancienne
+        st.markdown(
+            f"<a href='{URL_DEFINITION}' target='_blank' style='display:block; text-align:center; padding:.6rem 1rem; border-radius:.5rem; background:#f0f2f6; font-weight:600; text-decoration:none;'>💡 Donner une définition à ce mot</a>",
+            unsafe_allow_html=True
+        )
 
-# Carte mot + bouton copier discret
-word = st.session_state.last_word or "—"
-safe_word = escape(word)
-
-html_card = f"""
-<div class="main-card">
-  <div class="word-wrap">
-    <button class="copy-btn" title="Copier"
-      onclick="navigator.clipboard.writeText('{safe_word}');
-               this.innerText='✔'; setTimeout(()=>this.innerText='📋', 1200);">📋</button>
-    <div class="word">{safe_word}</div>
-  </div>
-  <div class="hint">Clique sur 🎲 pour proposer un nouveau mot • Bouton 📋 pour copier</div>
-</div>
-"""
-components.html(html_card, height=220, scrolling=False)
+big = f"<div style='font-size: 3rem; font-weight: 700; letter-spacing: .05em; text-align:center; margin-top:1rem'>{st.session_state.last_word or '—'}</div>"
+st.markdown(big, unsafe_allow_html=True)
