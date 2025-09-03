@@ -10,7 +10,7 @@ ALPH = string.ascii_lowercase
 I2A = {i: c for i, c in enumerate(ALPH)}
 V = len(ALPH)
 
-URL_DEFINITION = "https://chatgpt.com/g/g-68b5659be5848191b6790872cc11b7fc-le-neologene"
+URL_DEFINITION = "https://chatgpt.com/g/g-68b7fdeb1e248191b8919b5cfaa28691-le-neologene"
 
 @st.cache_resource
 def load_matrices():
